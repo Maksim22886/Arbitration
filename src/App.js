@@ -1,18 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import './App.css';
 
 function App() {
   const [top10, setTop10] = useState([]);
-
-  // const [symbol, setSymbol] = useState('BTCUSDT'); // Вы можете изменить символ по умолчанию
-  const [totalAskUSDT, setTotalAskUSDT] = useState(null);
-  const [totalBidUSDT, setTotalBidUSDT] = useState(null);
   const [error, setError] = useState(null);
 
   const [orderBookData, setOrderBookData] = useState({});
 
-  const fetchOrderBookTotals = async (symbol) => {
-    const url = `https://api.bitget.com/api/v2/spot/market/merge-depth?symbol=${symbol}&precision=scale0&limit=100`;
+  const [purchases, setPurchases] = useState([]);
+
+  const fetchByOrders = async (symbol) => {
+    try {
+      const url = `https://api.bitget.com/api/v2/spot/market/fills?symbol=${symbol}&limit=10`;
+      const response = await axios.get(url);
+      return response.data.data;
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      return [];
+    }
+  };
+
+  const showPurchases = async (symbol) => {
+    const orders = await fetchByOrders(symbol);
+
+    // Подсчет количества покупок и продаж
+    const buyCount = orders.filter((order) => order.side === 'buy').length;
+    const sellCount = orders.filter((order) => order.side === 'sell').length;
+
+    setPurchases((prevPurchases) => ({
+      ...prevPurchases,
+      [symbol]: {
+        orders: orders,
+        buyCount: buyCount,
+        sellCount: sellCount,
+      },
+    }));
+  };
+
+  const fetchOrderBookTotals = async (symbol, limit = 100) => {
+    const url = `https://api.bitget.com/api/v2/spot/market/merge-depth?symbol=${symbol}&precision=scale0&limit=${limit}`;
 
     try {
       const response = await fetch(url);
@@ -38,8 +65,8 @@ function App() {
       }));
       setError(null);
     } catch (err) {
-      setError('Error fetching order book');
-      console.error('Error fetching order book:', err);
+      // setError('Error fetching order book');
+      // console.error('Error fetching order book:', err);
     }
   };
 
@@ -48,8 +75,6 @@ function App() {
     try {
       const baseUrl = 'https://api.bitget.com';
       const tickersEndpoint = '/api/spot/v1/market/tickers';
-      const orderBookEndpoint =
-        '/v1/spot/public/getTickerInfoBySymbolCodeDisplayName?symbolCodeDisplayName=';
 
       // Получение тикеров
       const response = await axios.get(baseUrl + tickersEndpoint);
@@ -58,75 +83,6 @@ function App() {
       const usdtPairs = data.data.filter((ticker) =>
         ticker.symbol.includes('USDT'),
       );
-
-      // Функция для получения объема стаканов
-      const getOrderBookVolumes = async (symbol) => {
-        try {
-          const response = await axios.get(
-            `https://www.bitget.com/v1/spot/public/getTickerInfoBySymbolCodeDisplayName?symbolCodeDisplayName=${symbol}`,
-          );
-          const orderBookData = response.data;
-          console.log(orderBookData[0]);
-
-          console.log(orderBookData[0].askSz, orderBookData[0].bidSz, 'res');
-
-          if (!orderBookData || !orderBookData.bids || !orderBookData.asks) {
-            throw new Error('Некорректные данные ордербука');
-          }
-
-          // Суммируем объемы заявок на покупку и продажу
-          const totalBidVolume = orderBookData[0].bidSz;
-          const totalAskVolume = orderBookData[0].askSz;
-
-          return { totalBidVolume, totalAskVolume };
-        } catch (error) {
-          // console.error(`Ошибка при получении ордербука для ${symbol}:`, error);
-          // return { totalBidVolume: 0, totalAskVolume: 0 };
-        }
-      };
-
-      // getOrderBookVolumes('ASMUSDT');
-
-      async function fetchOrderBookTotals(symble) {
-        const url = `https://api.bitget.com/api/v2/spot/market/merge-depth?symbol=${symble}&precision=scale0&limit=100`;
-
-        try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const data = await response.json();
-          const asks = data.data.asks;
-          const bids = data.data.bids;
-
-          const totalAskUSDT = asks.reduce((total, [price, amount]) => {
-            return total + parseFloat(price) * parseFloat(amount);
-          }, 0);
-
-          const totalBidUSDT = bids.reduce((total, [price, amount]) => {
-            return total + parseFloat(price) * parseFloat(amount);
-          }, 0);
-
-          // продажа
-          console.log(`Total Ask in USDT: ${totalAskUSDT}`);
-          // покупка
-          console.log(`Total Bid in USDT: ${totalBidUSDT}`);
-        } catch (error) {
-          console.error('Error fetching order book:', error);
-        }
-      }
-
-      // Вызов функции
-      fetchOrderBookTotals();
-
-      //   (async () => {
-      //     const { totalBidUSDT, totalAskUSDT } = await getOrderBook('CATBOYUSDT');
-      //     // console.log(`Total Bid in USDT: ${totalBidUSDT}`);
-      //     // console.log(`Total Ask in USDT: ${totalAskUSDT}`);
-      // })();
-
-      // getOrderBook('CATBOYUSDT')
 
       // Обработка данных тикеров
       const differences = await Promise.all(
@@ -138,10 +94,6 @@ function App() {
           if (buyPrice > 0) {
             const percentageDifference =
               ((sellPrice - buyPrice) / buyPrice) * 100;
-            // Получаем объемы из ордербука
-            // const { totalBidVolume, totalAskVolume } =
-            //   await getOrderBookVolumes(pair.symbol);
-            // console.log(typeof pair.symbol);
 
             return {
               symbol: pair.symbol,
@@ -149,8 +101,6 @@ function App() {
               sellPrice,
               percentageDifference,
               usdtVol,
-              // totalBidVolume,
-              // totalAskVolume,
             };
           }
           return null;
@@ -158,10 +108,11 @@ function App() {
       );
 
       const filteredDifferences = differences.filter(Boolean);
+      // если добавить эту сортировку, то получаем ска монету с большой разницей в курсе покупки и продажи
       filteredDifferences.sort(
         (a, b) => b.percentageDifference - a.percentageDifference,
       );
-      setTop10(filteredDifferences.slice(0, 50));
+      setTop10(filteredDifferences.slice(0, 100));
     } catch (error) {
       console.error('Ошибка при получении данных:', error);
     }
@@ -169,8 +120,25 @@ function App() {
 
   // Используем useEffect для первоначальной загрузки данных
   useEffect(() => {
-    fetchData();
+    fetchData(); // первоначальный вызов
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 10000); // обновление каждые 10 секунд
+    return () => clearInterval(intervalId); // очистка интервала при размонтировании компонента
   }, []);
+
+  useEffect(() => {
+    if (top10.length > 0) {
+      top10.forEach((pair) => {
+        fetchOrderBookTotals(pair.symbol, 100);
+      });
+    }
+  }, [top10]);
+
+  // useEffect(() => {
+  //   // Fetch order book totals when the component mounts or when the symbol changes
+  //   fetchOrderBookTotals(symbol, 100);
+  // }, [symbol]); // Dependency array includes 'symbol' to refetch if it changes
 
   return (
     <div className="App">
@@ -181,21 +149,23 @@ function App() {
           {top10
             .sort((a, b) => b.usdtVol - a.usdtVol)
             .map((pair) => (
-              <li key={pair.symbol}>
+              <li key={pair.symbol} className="li6ka">
                 {pair.totalAskVolume !== undefined && (
-                  <p>{pair.totalAskVolume}</p>
+                  <div>{pair.totalAskVolume}</div>
                 )}
                 {pair.totalBidVolume !== undefined && (
-                  <p>{pair.totalBidVolume}</p>
+                  <div>{pair.totalBidVolume}</div>
                 )}
-                <p>Пара: {pair.symbol}</p>
-                {pair.buyPrice !== undefined && <p>Покупка: {pair.buyPrice}</p>}
+                <div>Пара: {pair.symbol}</div>
+                {pair.buyPrice !== undefined && (
+                  <div>Покупка: {pair.buyPrice}</div>
+                )}
                 {pair.sellPrice !== undefined && (
-                  <p>Продажа: {pair.sellPrice}</p>
+                  <div>Продажа: {pair.sellPrice}</div>
                 )}
-                <p>Волатильность: {pair.usdtVol} USDT</p>
+                <div>Волатильность: {pair.usdtVol} USDT</div>
                 {pair.percentageDifference !== undefined && (
-                  <p>Разница: {pair.percentageDifference.toFixed(2)}%</p>
+                  <div>Разница: {pair.percentageDifference.toFixed(2)}%</div>
                 )}
                 <a
                   target="_blank"
@@ -205,32 +175,86 @@ function App() {
                   Ссылка на спот
                 </a>
                 <div>
-                  <button onClick={() => fetchOrderBookTotals(pair.symbol)}>
-                  {orderBookData[pair.symbol]?.totalAskUSDT !== undefined ? 'Обновить' : 'Смотреть стакан'}
+                  <button onClick={() => fetchOrderBookTotals(pair.symbol, 15)}>
+                    {orderBookData[pair.symbol]?.totalAskUSDT !== undefined
+                      ? 'Обновить маленький стакан'
+                      : 'Ликвидность супер маленького стакана'}
+                  </button>
+                  <button onClick={() => fetchOrderBookTotals(pair.symbol, 50)}>
+                    {orderBookData[pair.symbol]?.totalAskUSDT !== undefined
+                      ? 'Обновить средний стакан'
+                      : 'Ликвидность маленького стакана'}
+                  </button>
+                  <button
+                    onClick={() => fetchOrderBookTotals(pair.symbol, 100)}
+                  >
+                    {orderBookData[pair.symbol]?.totalAskUSDT !== undefined
+                      ? 'Обновить большой стакан'
+                      : 'Ликвидность большого стакана'}
                   </button>
                   {error ? (
-                    <p>{error}</p>
+                    <div>{error}</div>
                   ) : (
-                    <div>
-                      <p>
+                    <div
+                      className={
+                        orderBookData[pair.symbol]?.totalBidUSDT >
+                        orderBookData[pair.symbol]?.totalAskUSDT
+                          ? 'background-green'
+                          : 'background-red'
+                      }
+                    >
+                      <div>
                         Продажа в стакане:{' '}
                         {orderBookData[pair.symbol]?.totalAskUSDT !== undefined
                           ? `${orderBookData[pair.symbol].totalAskUSDT.toFixed(
                               2,
                             )} USDT`
                           : 'N/A'}
-                      </p>
-                      <p>
+                      </div>
+                      <div>
                         Покупка в стакане:{' '}
                         {orderBookData[pair.symbol]?.totalBidUSDT !== undefined
                           ? `${orderBookData[pair.symbol].totalBidUSDT.toFixed(
                               2,
                             )} USDT`
                           : 'N/A'}
-                      </p>
+                      </div>
                     </div>
                   )}
                 </div>
+                <button onClick={() => showPurchases(pair.symbol)}>
+                  Показать покупки
+                </button>
+                <div>Список покупок</div>
+                <ul>
+                  <div>
+                    Количество покупок: {purchases[pair.symbol]?.buyCount || 0}
+                  </div>
+                  <div>
+                    Количество продаж: {purchases[pair.symbol]?.sellCount || 0}
+                  </div>
+                  {(purchases[pair.symbol]?.orders || []).map(
+                    (purchase, index) => (
+                      <li key={index}>
+                        <div>
+                          Сумма в USDT:{' '}
+                          {(
+                            parseFloat(purchase.size) *
+                            parseFloat(purchase.price)
+                          ).toFixed(2)}
+                        </div>{' '}
+                        <div>Количество: {purchase.size}</div>
+                        <div>
+                          {purchase.side === 'buy' ? 'покупка' : 'продажа'}
+                        </div>
+                        <div>
+                          Время:{' '}
+                          {new Date(parseInt(purchase.ts)).toLocaleString()}
+                        </div>
+                      </li>
+                    ),
+                  )}
+                </ul>
               </li>
             ))}
         </ul>

@@ -36,3 +36,15 @@
     transform: rotate(360deg);
   }
 }
+
+.li6ka {
+  border-radius: 2px;
+}
+
+.background-green {
+  background-color: green;
+}
+
+.background-red {
+  background-color: red;
+}
